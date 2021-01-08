@@ -1,0 +1,221 @@
+PARSER_BEGIN(Parser)
+
+import java.util.List;
+import java.util.ArrayList;
+import java.io.IOException;
+/** ID lister. */
+public class Parser {
+  /** Main entry point. */
+  public static void main(String args[]) throws IOException {
+    Parser parser = new Parser(System.in);
+    CodeBlock c = new CodeBlock();
+    ASTNode exp;
+	Environment env = new Environment();
+	BigStack b = new BigStack();
+    while (true) {
+    try {
+    exp = parser.Start();
+    exp.eval(env,b);
+    System.out.println(exp.eval(env,b).toString());
+    env.maxid = -1;
+   	exp.compile(c,env);
+   	FileBuilder.writerTroll(c.code);
+   	for(String s: c.code) {
+   	  //Comentário para o scamaz
+   	  //if(s!=null)
+		//System.out.println( s );
+    }
+    c = new CodeBlock();
+   	
+    } catch (Exception e) {
+      System.out.println (e);
+      parser.ReInit(System.in);
+    }
+    }
+  }
+
+}
+
+PARSER_END(Parser)
+
+SKIP :
+{
+  " "
+| "\t"
+| "\r"
+| "\n"
+}
+
+TOKEN :
+{
+  < DEF : "def">
+  |
+  <TRUE: "true" >
+  |
+  <FALSE: "false" >
+  |  
+  < IN : "in">
+  |
+  < END : "end">
+  |
+  < NEW : "new" >
+  |
+  < IF : "if" >	
+  |
+  < WHILE : "while" >
+  |
+  < ELSE : "else" >
+  | 
+  < DO : "do" >
+  |
+  < PRINT : "print" >
+  |
+  < PRINTLN : "println" >
+  |
+  < THEN : "then" >
+  |
+  < Id: ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )* >
+  |
+  < Num: (["0"-"9"]) + >
+  |
+  < PLUS : "+" >
+  |
+  < MINUS : "-">
+  |
+  < TIMES : "*">
+  |
+  < DIV : "/">
+  |
+  < LPAR : "(" >
+  |
+  < RPAR : ")" >
+  |
+  < EQ : "==" >
+  |
+  < EQUALS : "=" >
+  |
+  < GREATARINA : ">" >
+  |
+  < SMOL : "<" >
+  |
+  < GREATEREQ : ">=" >
+  |
+  < SMALLEREQ : "<=" >
+  |
+  < RESTINHO : "%" >
+  |
+  < AND : "&&" >
+  |
+  < OR : "||" >
+  |
+  < NEGATION : "~" >
+  | 
+  < POINTER : "!" >
+  |
+  < ASSIGNMENT : ":=" >
+  |
+  < COMA: ";" >
+  |
+  < DOUBLECOMA: ";;" >
+
+}
+
+ASTNode Start() throws IOException:
+{ ASTNode t; }
+{
+   t = Em() <DOUBLECOMA>
+   { return t; }
+}
+
+ASTNode Em() throws IOException:
+{ASTNode t1, t2;
+}
+{
+  t1 = E() (<COMA> t2 = E() { t1 = new ASTSeq (t1, t2); })*
+
+  {return t1; }
+}
+
+ASTNode E() throws IOException:
+{ASTNode t1, t2;
+Token op;}
+{
+  t1 = Exp() (( op = < OR > |  op = < AND > | op = < EQ > | op = < GREATARINA > | op = < SMOL > | op = < GREATEREQ > | op = < SMALLEREQ > | op = < ASSIGNMENT > ) t2 = Exp() {
+    if (op.kind == ASSIGNMENT)
+    	t1 = new ASTAssign (t1, t2);
+    else if (op.kind == EQ)
+    	t1 = new ASTEq(t1,t2);
+    else if (op.kind == GREATARINA)
+    	t1 = new ASTGreaterThan(t1,t2);
+    else if (op.kind == SMOL)
+    	t1 = new ASTSmallerThan(t1,t2);
+    else if (op.kind == GREATEREQ)
+    	t1 = new ASTGreaterEqual(t1,t2);
+    else if (op.kind == AND)
+    	t1 = new ASTAnd(t1,t2);
+    else if (op.kind == OR)
+    	t1 = new ASTOr (t1,t2);
+    else
+    	t1 = new ASTSmallerEqual(t1,t2);})*
+  {return t1;}
+}
+  
+ASTNode Exp() throws IOException:
+{ Token op;
+  ASTNode t1, t2; }
+{
+     t1=Term() ( ( op=<PLUS> | op=<MINUS>) t2=Term() 
+                 { if (op.kind == PLUS) 
+                         t1 = new ASTPlus(t1,t2);
+                   else
+                     t1 = new ASTSub(t1,t2);
+                 } 
+               ) * 
+     { return t1; } 
+}
+
+ASTNode Term() throws IOException:
+{Token op;
+  ASTNode t1, t2;}
+{
+     t1 = Fact() ( ( op=<TIMES> | op=<DIV> | op= <RESTINHO>) t2 = Fact() // changed
+ 		 { if (op.kind == TIMES) 
+                         t1 = new ASTMult(t1,t2);
+                   else if (op.kind == DIV)
+                     t1 = new ASTDiv(t1,t2);
+                   else t1 = new ASTRestDiv (t1,t2);
+                 }  
+		)*
+     { return t1; } 
+}
+
+	 
+ASTNode Fact() throws IOException:
+{ Token n;
+  List<String> ids = new ArrayList<String>();
+  List<ASTNode> inits = new ArrayList<ASTNode>();
+  ASTNode t, t1, body;
+  body = null;
+  t = null;
+  t1 = null;}
+{
+   ( n=<Num> { body = new ASTNum(Integer.parseInt(n.image)); }
+   | n = <Id> {body = new ASTId(n.toString());}
+   | (n=<TRUE> | n=<FALSE>) { body = new ASTBool(Boolean.parseBoolean(n.image)); }
+   | <DEF> (n = <Id> <EQUALS> t = Em() { ids.add(n.toString()); inits.add(t);} )+ <IN> t1 = Em() <END> {body = new ASTDef(ids,inits,t1);}
+   | <LPAR> body=Em() <RPAR>
+   | <NEW> t = Fact() { body = new ASTNew(t); }
+   | <MINUS> body=Fact() { body = new ASTUMinus(body); }
+   | <PLUS> body=Fact() { body = new ASTUPlus(body);}
+   | <POINTER> t = Fact() { body = new ASTPointer(t); }
+   | <IF> t = Em() <THEN> t1 = Em() (<ELSE> body = Em())? <END> {body = new ASTIf(t,t1,body);}
+   | <WHILE> t = Em() <DO> t1 = Em() <END> { body = new ASTWhile(t,t1); }
+   | <PRINT> t = E() { body = new ASTPrint(t); }
+   | <PRINTLN> (t = E())? { body = new ASTPrintln(t); }
+   | <NEGATION> t=E() { body = new ASTNiggative(t); }
+   )
+
+   { return body; }
+}
+
+
